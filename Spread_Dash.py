@@ -3,7 +3,6 @@
 ########################################################################################################################
 import base64
 import io
-import dateutil
 
 import dash
 from dash.dependencies import Input, Output
@@ -219,9 +218,7 @@ def work_on_data():
         time_col = 'ts'
     else:
         time_col = 'time'
-    for idx in inp.df.index:
-        inp.df.loc[idx, 'new_time'] = dateutil.parser.parse(inp.df.loc[idx, time_col])
-    inp.df['new_time'] = pd.to_datetime(inp.df['new_time'])
+    inp.df.loc[idx, 'new_time'] = pd.to_datetime(inp.df[time_col])
     inp.df.set_index('new_time', inplace=True)
     if "dwatt" not in inp.df.columns:
         inp.df.loc[inp.df.index, 'dwatt'] = 0
