@@ -31,6 +31,8 @@ server.secret_key = os.environ.get('secret_key', 'secret')
 class user_input():
     def __init__(self):
         self = self
+
+
 inp = user_input()
 inp.df = pd.DataFrame()
 inp.ttxd_min = 0
@@ -218,7 +220,7 @@ def work_on_data():
         time_col = 'ts'
     else:
         time_col = 'time'
-    inp.df.loc[idx, 'new_time'] = pd.to_datetime(inp.df[time_col])
+    inp.df['new_time'] = pd.to_datetime(inp.df[time_col])
     inp.df.set_index('new_time', inplace=True)
     if "dwatt" not in inp.df.columns:
         inp.df.loc[inp.df.index, 'dwatt'] = 0
