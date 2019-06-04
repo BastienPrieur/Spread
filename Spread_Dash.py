@@ -6,17 +6,25 @@ import io
 import dateutil
 
 import dash
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import dash_core_components as dcc
 import dash_html_components as html
 import dash_table
 import mydcc
+import os
 
 import plotly.graph_objs as go
 
 import pandas as pd
 import numpy as np
 
+########################################################################################################################
+# Initialization
+########################################################################################################################
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = dash.Dash(name=__name__, external_stylesheets=external_stylesheets)
+server = app.server
+server.secret_key = os.environ.get('secret_key', 'secret')
 
 ########################################################################################################################
 # Class
@@ -24,13 +32,6 @@ import numpy as np
 class user_input():
     def __init__(self):
         self = self
-
-
-########################################################################################################################
-# Initialization
-########################################################################################################################
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 inp = user_input()
 inp.df = pd.DataFrame()
 inp.ttxd_min = 0

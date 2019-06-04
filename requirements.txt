@@ -1,0 +1,9 @@
+gunicorn
+dash
+dash-core-components
+dash-html-components
+pandas
+numpy
+plotly
+mydcc
+dateutil
