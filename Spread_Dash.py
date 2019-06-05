@@ -5,7 +5,7 @@ import base64
 import io
 
 import dash
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
 import dash_html_components as html
 import dash_table
@@ -19,6 +19,7 @@ import plotly.graph_objs as go
 import pandas as pd
 import numpy as np
 
+
 ########################################################################################################################
 # Initialization
 ########################################################################################################################
@@ -27,63 +28,42 @@ app = dash.Dash(name=__name__, external_stylesheets=external_stylesheets)
 server = app.server
 server.secret_key = os.environ.get('secret_key', 'secret')
 
-########################################################################################################################
-# Class
-########################################################################################################################
-class user_input():
-    def __init__(self):
-        self = self
-
-
-inp = user_input()
-inp.df = pd.DataFrame()
-inp.ttxd_min = 0
-
 
 ########################################################################################################################
 # Global Functions
 ########################################################################################################################
-
-def get_figure_ini():
-    inp.layout_timeseries = go.Layout(
-        showlegend=True,
-        legend=dict(x=1.08, y=0),
-        hoverdistance=2,
-        height=520,
-        yaxis=dict(
-            title='TTXM [°F]'
-        ),
-        yaxis2=dict(
-            title='TNH [%]',
-            overlaying="y",
-            side="right",
-            showgrid=False
-        )
+layout_timeseries = go.Layout(
+    showlegend=True,
+    legend=dict(x=1.08, y=0),
+    hoverdistance=2,
+    height=480,
+    yaxis=dict(
+        title='TTXM [°F]'
+    ),
+    yaxis2=dict(
+        title='TNH [%]',
+        overlaying="y",
+        side="right",
+        showgrid=False
     )
+)
 
-    inp.data_timeseries = go.Scatter()
-
-    inp.layout_radar = go.Layout(
-        showlegend=False,
-        autosize=False,
-        polar=dict(
-            angularaxis=dict(rotation=90),
-        ),
-        margin=dict(t=30, b=30)
-    )
-
-    inp.data_radar = go.Scatterpolar()
-
-    inp.slider_min = 0
-    inp.slider_max = 10
+layout_radar = go.Layout(
+    showlegend=False,
+    autosize=False,
+    polar=dict(
+        angularaxis=dict(rotation=90),
+    ),
+    margin=dict(t=30, b=30)
+)
 
 
-def template_download_plotly(fig, slider_value):
+def template_download_plotly(fig, slider_date):
 
     if 'data' in fig:
         fig_json = fig.to_plotly_json()
-        if slider_value != 0:
-            fig_json['layout']['title']['text'] = 'Spread at {}'.format(inp.df.index[slider_value])
+        if slider_date != 0:
+            fig_json['layout']['title']['text'] = 'Spread at {}'.format(slider_date)
             fig_json['layout']['margin'] = dict(t=80)
         html_body = plotly.offline.plot(fig_json, include_plotlyjs=False, output_type='div')
         html_str = '''<html>
@@ -100,9 +80,6 @@ def template_download_plotly(fig, slider_value):
         return html_str
 
 
-get_figure_ini()
-
-
 ########################################################################################################################
 # Layout
 ########################################################################################################################
@@ -113,6 +90,14 @@ app.layout = html.Div(
         dcc.Markdown('''
         Developped and imagined by Thierry DELACOUR
         Supported by Bastien PRIEUR-GARROUSTE'''),
+        html.Div(
+            id='df_save',
+            style={'display': 'none'}
+        ),
+        html.Div(
+            id='ttxd_save',
+            style={'display': 'none'}
+        ),
         mydcc.Relayout(
             id='relay',
             aim='gr_timeseries'
@@ -142,11 +127,22 @@ app.layout = html.Div(
         ),
         html.Div(
             children=[
+                html.Div(
+                    dcc.Markdown('''Number of exhaust sensor to plot: '''),
+                    style={'display': 'inline-block'}
+                ),
+                html.Div(
+                    dcc.Dropdown(
+                        id='drop_nb',
+                        options=[]
+                    ),
+                    style={'display': 'inline-block', 'width': '25%', 'margin-left': '5%'}
+                ),
                 dcc.Graph(
                     id='gr_timeseries',
                     figure={
-                        'data': [inp.data_timeseries],
-                        'layout': inp.layout_timeseries
+                        'data': [go.Scatter()],
+                        'layout': layout_timeseries
                     }
                 ),
                 html.Div(
@@ -186,8 +182,8 @@ app.layout = html.Div(
                 dcc.Graph(
                     id='gr_radar',
                     figure={
-                        'data': [inp.data_radar],
-                        'layout': inp.layout_radar
+                        'data': [go.Scatterpolar()],
+                        'layout': layout_radar
                     }
                 ),
                 html.Div(
@@ -204,8 +200,8 @@ app.layout = html.Div(
                 ),
                 dcc.Slider(
                     id='cc_slider',
-                    min=inp.slider_min,
-                    max=inp.slider_max,
+                    min=0,
+                    max=10,
                     step=1
                 ),
                 dcc.Markdown(
@@ -221,23 +217,26 @@ app.layout = html.Div(
 
 
 ########################################################################################################################
-# Read files and provide timeseries
+# Read file
 ########################################################################################################################
 @app.callback([Output('cc_upload_title', 'children'),
-               Output('gr_timeseries', 'figure'),
+               Output('drop_nb', 'options'),
                Output('cc_slider', 'min'),
                Output('cc_slider', 'max'),
-               Output('dl_fig_timeseries', 'href')],
+               Output('df_save', 'children'),
+               Output('ttxd_save', 'children')],
               [Input('cc_upload', 'contents'),
                Input('cc_upload', 'filename')])
-def main(content, filename):
-    file_name, is_correct, min_slider, max_slider = read_imported_file(content, filename)
-    if is_correct == 'Yes':
-        fig_timeseries = send_data_timeseries()
-    else:
-        fig_timeseries = go.Figure(data=[go.Scatter()], layout=inp.layout_timeseries)
+def get_data(content, filename):
 
-    return file_name, fig_timeseries, min_slider, max_slider, template_download_plotly(fig_timeseries, 0)
+    new_file_name, min_slider, max_slider, df_data, tab_ttxd = read_imported_file(content, filename)
+    drop_opt = [{'label': x, 'value': x} for x in range(1, len(tab_ttxd) + 1)]
+    if content is not None:
+        df_json = df_data.to_json()
+    else:
+        df_json = None
+
+    return new_file_name, drop_opt, min_slider, max_slider, df_json, tab_ttxd
 
 
 def read_imported_file(content, filename):
@@ -245,93 +244,108 @@ def read_imported_file(content, filename):
         content_type, content_string = content.split(',')
         decoded = base64.b64decode(content_string)
         if 'csv' in filename:
-            inp.df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-            if ';' in inp.df.columns[0]:
-                inp.df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep=";")
+            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+            if ';' in df.columns[0]:
+                df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep=";")
         elif 'xls' in filename:
-            inp.df = pd.read_excel(io.BytesIO(decoded))
+            df = pd.read_excel(io.BytesIO(decoded))
         file_name = '**Imported file:** {}'.format(filename)
-        work_on_data()
-        min_slider, max_slider = 0, len(inp.df.index) - 1
-        inp.slider_min, inp.slider_max = min_slider, max_slider
-        is_correct = 'Yes'
+        df_data, tab_ttxd = work_on_data(df)
+        min_slider, max_slider = 0, len(df_data.index) - 1
     else:
         file_name = '**Imported file:**'
-        is_correct = 'No'
         min_slider, max_slider = 0, 10
-    return file_name, is_correct, min_slider, max_slider
+        df_data = pd.DataFrame()
+        tab_ttxd = []
+    return file_name, min_slider, max_slider, df_data, tab_ttxd
 
 
-def work_on_data():
-    inp.df.rename(str.lower, axis='columns', inplace=True)
-    for column in inp.df.columns:
+def work_on_data(df):
+    df.rename(str.lower, axis='columns', inplace=True)
+    for column in df.columns:
         if '.' in column:
-            inp.df = inp.df.rename(columns={column: column.split('.')[1]})
+            df = df.rename(columns={column: column.split('.')[1]})
 
-    if 'time' in inp.df.columns:
-        if 'Units' in inp.df['time'][0]:
+    if 'time' in df.columns:
+        if 'Units' in df['time'][0]:
             # File coming from the OSM, we remove the two first lines (Units and Description)
-            inp.df = inp.df.drop(inp.df.index[0])
-            inp.df = inp.df.drop(inp.df.index[0])
+            df = df.drop(df.index[0])
+            df = df.drop(df.index[0])
 
-    if 'ts' in inp.df.columns:
-        inp.df['new_time'] = pd.to_datetime(inp.df['ts'], format='%d/%m/%Y %H:%M:%S')
+    if 'ts' in df.columns:
+        df['new_time'] = pd.to_datetime(df['ts'], format='%d/%m/%Y %H:%M:%S')
     else:
-        if 'date' in inp.df.columns:
-            inp.df['new_time'] = pd.to_datetime(inp.df['date'] + ' ' + inp.df['time'])
+        if 'date' in df.columns:
+            df['new_time'] = pd.to_datetime(df['date'] + ' ' + df['time'])
         else:
-            inp.df['new_time'] = pd.to_datetime(inp.df['time'])
-    inp.df.set_index('new_time', inplace=True)
+            df['new_time'] = pd.to_datetime(df['time'])
+    df.set_index('new_time', inplace=True)
 
-    if "dwatt" in inp.df.columns:
-        inp.df['dwatt'] = pd.to_numeric(inp.df['dwatt'])
+    if "dwatt" in df.columns:
+        df['dwatt'] = pd.to_numeric(df['dwatt'])
     else:
-        inp.df.loc[:, 'dwatt'] = 0
+        df.loc[:, 'dwatt'] = 0
 
-    if 'tnh' in inp.df.columns:
-        inp.df['tnh'] = pd.to_numeric(inp.df['tnh'])
+    if 'tnh' in df.columns:
+        df['tnh'] = pd.to_numeric(df['tnh'])
     else:
-        inp.df.loc[:, 'tnh'] = 0
+        df.loc[:, 'tnh'] = 0
 
     ttxd_count = 0
-    for idx_ttxd in inp.df.columns:
+    for idx_ttxd in df.columns:
         if 'ttxd_' in idx_ttxd:
-            inp.df[idx_ttxd] = pd.to_numeric(inp.df[idx_ttxd])
+            df[idx_ttxd] = pd.to_numeric(df[idx_ttxd])
             ttxd_count += 1
 
-    inp.tab_ttxd = []
+    tab_ttxd = []
     for idx_ttxd in range(0, ttxd_count):
-        inp.tab_ttxd.append("ttxd_" + str(idx_ttxd + 1))
+        tab_ttxd.append("ttxd_" + str(idx_ttxd + 1))
+
+    return df, tab_ttxd
 
 
-def send_data_timeseries():
-    data_time = []
-    time_x = list(inp.df.index)
-    for idx in inp.tab_ttxd:
-        data_time.append(
-            go.Scattergl(
-                x=time_x,
-                y=inp.df[idx],
-                name=idx,
-                yaxis="y",
+@app.callback([Output('gr_timeseries', 'figure'),
+               Output('dl_fig_timeseries', 'href')],
+              [Input('drop_nb', 'value')],
+              [State('df_save', 'children'),
+               State('ttxd_save', 'children')])
+def send_data_timeseries(drop_nb, df_json, tab_ttxd):
+    if drop_nb is not None:
+        if drop_nb != 0:
+            df_data = pd.read_json(df_json)
+            data_time = []
+            time_x = list(df_data.index)
+            for idx in tab_ttxd[:drop_nb]:
+                data_time.append(
+                    go.Scattergl(
+                        x=time_x,
+                        y=df_data[idx],
+                        name=idx,
+                        yaxis="y",
+                    )
+                )
+
+            data_time.append(
+                go.Scattergl(
+                    x=time_x,
+                    y=df_data["tnh"],
+                    name="TNH",
+                    yaxis="y2",
+                    hoverinfo=("x", "y")
+                )
             )
-        )
 
-    data_time.append(
-        go.Scattergl(
-            x=time_x,
-            y=inp.df["tnh"],
-            name="TNH",
-            yaxis="y2",
-            hoverinfo=("x", "y")
-        )
-    )
+            fig_timeseries = go.Figure(data=data_time, layout=layout_timeseries)
 
-    inp.data_timeseries = data_time
+        else:
 
-    fig_timeseries = go.Figure(data=inp.data_timeseries, layout=inp.layout_timeseries)
+            fig_timeseries = go.Figure(data=[go.Scatter()], layout=layout_timeseries)
 
-    return fig_timeseries
+    else:
+
+        fig_timeseries = go.Figure(data=[go.Scatter()], layout=layout_timeseries)
+
+    return fig_timeseries, template_download_plotly(fig_timeseries, 0)
 
 
 ########################################################################################################################
@@ -343,56 +357,59 @@ def send_data_timeseries():
                Output('relay', 'layout'),
                Output('dl_fig_radar', 'href')],
               [Input('cc_slider', 'value'),
-               Input('radar_range', 'value')])
-def update_slider(slider_value, radar_extr):
-    if len(inp.df) > 0:
-        fig_radar = send_data_radar(slider_value, radar_extr)
-        data_table = send_data_table(slider_value)
-        radar_date = str(inp.df.index[slider_value])
-        new_layout = relayout_timeseries(slider_value)
+               Input('radar_range', 'value')],
+              [State('df_save', 'children'),
+               State('ttxd_save', 'children')])
+def update_slider(slider_value, radar_extr, df_json, tab_ttxd):
+    if df_json is not None:
+        df_data = pd.read_json(df_json)
+        fig_radar = send_data_radar(slider_value, radar_extr, df_data, tab_ttxd)
+        data_table = send_data_table(slider_value, df_data, tab_ttxd)
+        radar_date = str(df_data.index[slider_value])
+        new_layout = relayout_timeseries(slider_value, df_data)
+        slider_date = df_data.index[slider_value]
     else:
-        fig_radar = go.Figure(data=[go.Scatterpolar()], layout=inp.layout_radar)
+        fig_radar = go.Figure(data=[go.Scatterpolar()], layout=layout_radar)
         data_table = []
         radar_date = '0'
-        new_layout = inp.layout_timeseries
-    return fig_radar, data_table, radar_date, new_layout, template_download_plotly(fig_radar, slider_value)
+        new_layout = layout_timeseries
+        slider_date = 0
+    return fig_radar, data_table, radar_date, new_layout, template_download_plotly(fig_radar, slider_date)
 
 
-def send_data_radar(radar_idx, radar_extr):
+def send_data_radar(radar_idx, radar_extr, df_data, tab_ttxd):
 
-    tab_ttxd_polar = inp.tab_ttxd
-    tab_ttxd_polar.append(inp.tab_ttxd[0])
-    data_rad = inp.df.loc[inp.df.index[radar_idx], tab_ttxd_polar]
+    tab_ttxd_polar = tab_ttxd
+    tab_ttxd_polar.append(tab_ttxd[0])
+    data_rad = df_data.loc[df_data.index[radar_idx], tab_ttxd_polar]
     plot_rad = [
         go.Scatterpolar(
             r=data_rad,
             theta=tab_ttxd_polar,
             mode="lines",
-            name=str(inp.df.index[radar_idx])
+            name=str(df_data.index[radar_idx])
         )
     ]
 
-    inp.data_radar = plot_rad
+    layout_radar['polar'].radialaxis = dict(range=(radar_extr[0], radar_extr[1]))
+    layout_radar['title']['text'] = ''
 
-    inp.layout_radar['polar'].radialaxis = dict(range=(radar_extr[0], radar_extr[1]))
-    inp.layout_radar['title']['text'] = ''
-
-    fig_radar = go.Figure(data=inp.data_radar, layout=inp.layout_radar)
+    fig_radar = go.Figure(data=plot_rad, layout=layout_radar)
 
     return fig_radar
 
 
-def send_data_table(radar_idx):
+def send_data_table(radar_idx, df_data, tab_ttxd):
     tab_calc = []
-    for idx_ttxd in inp.tab_ttxd:
-        if inp.df[idx_ttxd].mean() > 0:
+    for idx_ttxd in tab_ttxd:
+        if df_data[idx_ttxd].mean() > 0:
             tab_calc.append(idx_ttxd)
 
-    spread = max(inp.df.loc[inp.df.index[radar_idx], tab_calc]) - min(inp.df.loc[inp.df.index[radar_idx], tab_calc])
+    spread = max(df_data.loc[df_data.index[radar_idx], tab_calc]) - min(df_data.loc[df_data.index[radar_idx], tab_calc])
     df_t = pd.DataFrame(index=[0], columns=['TNH', 'DWATT', 'TTXM', 'TTSXP'])
-    df_t.loc[0, 'TNH'] = round(inp.df.loc[inp.df.index[radar_idx], 'tnh'], 3)
-    df_t.loc[0, 'DWATT'] = round(inp.df.loc[inp.df.index[radar_idx], 'dwatt'], 3)
-    df_t.loc[0, 'TTXM'] = round(np.mean(inp.df.loc[inp.df.index[radar_idx], tab_calc]), 1)
+    df_t.loc[0, 'TNH'] = round(df_data.loc[df_data.index[radar_idx], 'tnh'], 3)
+    df_t.loc[0, 'DWATT'] = round(df_data.loc[df_data.index[radar_idx], 'dwatt'], 3)
+    df_t.loc[0, 'TTXM'] = round(np.mean(df_data.loc[df_data.index[radar_idx], tab_calc]), 1)
     df_t.loc[0, 'TTSXP'] = round(spread, 3)
 
     data_table = df_t.to_dict('records')
@@ -400,12 +417,12 @@ def send_data_table(radar_idx):
     return data_table
 
 
-def relayout_timeseries(radar_idx):
-    inp.layout_timeseries.shapes = [dict(
-        type='rect', xanchor=inp.df.index[radar_idx], xsizemode='pixel', x0=-5, x1=5, yref='paper', y0=0, y1=1,
+def relayout_timeseries(radar_idx, df_data):
+    layout_timeseries.shapes = [dict(
+        type='rect', xanchor=df_data.index[radar_idx], xsizemode='pixel', x0=-5, x1=5, yref='paper', y0=0, y1=1,
         opacity=0.4, fillcolor='green'
     )]
-    new_layout = inp.layout_timeseries
+    new_layout = layout_timeseries
 
     return new_layout
 
@@ -414,13 +431,16 @@ def relayout_timeseries(radar_idx):
 # Timeseries click
 ########################################################################################################################
 @app.callback(Output('cc_slider', 'value'),
-              [Input('gr_timeseries', 'clickData')])
-def timeseries_click(sel_pt):
+              [Input('gr_timeseries', 'clickData')],
+              [State('df_save', 'children')])
+def timeseries_click(sel_pt, df_json):
 
     if sel_pt is not None:
         sel_date = pd.to_datetime(sel_pt['points'][0]['x'], format='%Y-%m-%d %H:%M:%S')
-        for idx in range(0, len(inp.df.index) + 1):
-            if inp.df.index[idx] == sel_date:
+        df_data = pd.read_json(df_json)
+        sl_value = 0
+        for idx in range(0, len(df_data.index) + 1):
+            if df_data.index[idx] == sel_date:
                 sl_value = idx
                 break
     else:
