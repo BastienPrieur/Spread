@@ -11,7 +11,9 @@ import dash_html_components as html
 import dash_table
 import mydcc
 import os
+from urllib.parse import quote
 
+import plotly
 import plotly.graph_objs as go
 
 import pandas as pd
@@ -38,18 +40,26 @@ inp.df = pd.DataFrame()
 inp.ttxd_min = 0
 
 
+########################################################################################################################
+# Global Functions
+########################################################################################################################
+
 def get_figure_ini():
     inp.layout_timeseries = go.Layout(
         showlegend=True,
         legend=dict(x=1.08, y=0),
         hoverdistance=2,
-        yaxis=dict(title='TTXM'),
+        height=520,
+        yaxis=dict(
+            title='TTXM [°F]'
+        ),
         yaxis2=dict(
-            title='TNH',
+            title='TNH [%]',
             overlaying="y",
             side="right",
             showgrid=False
-        ))
+        )
+    )
 
     inp.data_timeseries = go.Scatter()
 
@@ -59,7 +69,7 @@ def get_figure_ini():
         polar=dict(
             angularaxis=dict(rotation=90),
         ),
-        margin=dict(b=30)
+        margin=dict(t=30, b=30)
     )
 
     inp.data_radar = go.Scatterpolar()
@@ -68,20 +78,46 @@ def get_figure_ini():
     inp.slider_max = 10
 
 
+def template_download_plotly(fig, slider_value):
+
+    if 'data' in fig:
+        fig_json = fig.to_plotly_json()
+        if slider_value != 0:
+            fig_json['layout']['title']['text'] = 'Spread at {}'.format(inp.df.index[slider_value])
+            fig_json['layout']['margin'] = dict(t=80)
+        html_body = plotly.offline.plot(fig_json, include_plotlyjs=False, output_type='div')
+        html_str = '''<html>
+             <head>
+                 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+             </head>
+             <body>
+                 {}
+             </body>
+             </html>
+             '''.format(html_body)
+        html_str = "data:text/html;charset=utf-8," + quote(html_str)
+
+        return html_str
+
+
 get_figure_ini()
 
 
 ########################################################################################################################
 # Layout
 ########################################################################################################################
-app.layout = html.Div([
-    html.H1('Exhaust Spread Application'),
-    dcc.Markdown('---'),
-    mydcc.Relayout(
-        id='relay',
-        aim='gr_timeseries'
-    ),
-    dcc.Upload(
+app.layout = html.Div(
+    children=[
+        html.H1('Exhaust Spread Application'),
+        dcc.Markdown('---'),
+        dcc.Markdown('''
+        Developped and imagined by Thierry DELACOUR
+        Supported by Bastien PRIEUR-GARROUSTE'''),
+        mydcc.Relayout(
+            id='relay',
+            aim='gr_timeseries'
+        ),
+        dcc.Upload(
             id='cc_upload',
             children=html.Div([
                 'Drag and Drop or ',
@@ -100,96 +136,108 @@ app.layout = html.Div([
             # Allow multiple files to be uploaded
             multiple=False
         ),
-    dcc.Markdown(
-        id='cc_upload_title',
-        children=['**Imported file:**']
-    ),
-    html.Div(
-        children=[
-            dcc.Graph(
-                id='gr_timeseries',
-                figure={
-                    'data': [inp.data_timeseries],
-                    'layout': inp.layout_timeseries
-                }
-            ),
-            dash_table.DataTable(
-                id='gr_table',
-                columns=[{'name':'TNH', 'id':'TNH'}, {'name':'DWATT', 'id':'DWATT'},
-                         {'name':'TTXM', 'id':'TTXM'}, {'name':'TTSXP', 'id':'TTSXP'}],
-                style_cell={'minWidth': '25%', 'width': '25%', 'maxWidth': '25%'}
-            )
-        ],
-        style={'width': '48%', 'display': 'inline-block'}
-    ),
-    html.Div(
-        children=[
-            dcc.Graph(
-                id='gr_radar',
-                figure={
-                    'data': [inp.data_radar],
-                    'layout': inp.layout_radar
-                }
-            ),
-            dcc.Slider(
-                id='cc_slider',
-                min=inp.slider_min,
-                max=inp.slider_max,
-                step=1
-            ),
-            dcc.Markdown(
-                id='slider_value',
-                children=['0']
-            )
-        ],
-        style={'width': '48%', 'float': 'right', 'display': 'inline-block'}
-    )
-])
+        dcc.Markdown(
+            id='cc_upload_title',
+            children=['**Imported file:**']
+        ),
+        html.Div(
+            children=[
+                dcc.Graph(
+                    id='gr_timeseries',
+                    figure={
+                        'data': [inp.data_timeseries],
+                        'layout': inp.layout_timeseries
+                    }
+                ),
+                html.Div(
+                    children=[
+                        html.A(
+                            'Download this Graph',
+                            id='dl_fig_timeseries',
+                            download="Graph_Spread_Time.html",
+                            href='',
+                            target="_blank"
+                        )
+                    ],
+                    style={'width': '26%', 'margin-left': '74%'}
+                ),
+                dash_table.DataTable(
+                    id='gr_table',
+                    columns=[{'name':'TNH', 'id':'TNH'}, {'name':'DWATT', 'id':'DWATT'},
+                             {'name':'TTXM', 'id':'TTXM'}, {'name':'TTSXP', 'id':'TTSXP'}],
+                    style_cell={'minWidth': '25%', 'width': '25%', 'maxWidth': '25%'}
+                )
+            ],
+            style={'width': '48%', 'display': 'inline-block'}
+        ),
+        html.Div(
+            children=[
+                html.Div(
+                    dcc.RangeSlider(
+                        id='radar_range',
+                        min=0,
+                        max=1200,
+                        step=50,
+                        marks={100 * i: '{}°F'.format(100 * i) for i in range(13)},
+                        value=[100, 1000]
+                    ),
+                    style={'margin-bottom': '50px'}
+                ),
+                dcc.Graph(
+                    id='gr_radar',
+                    figure={
+                        'data': [inp.data_radar],
+                        'layout': inp.layout_radar
+                    }
+                ),
+                html.Div(
+                    children=[
+                        html.A(
+                            'Download this Graph',
+                            id='dl_fig_radar',
+                            download="Graph_Spread_Radar.html",
+                            href='',
+                            target="_blank"
+                        )
+                    ],
+                    style={'width': '26%', 'margin-left': '74%'}
+                ),
+                dcc.Slider(
+                    id='cc_slider',
+                    min=inp.slider_min,
+                    max=inp.slider_max,
+                    step=1
+                ),
+                dcc.Markdown(
+                    id='slider_value',
+                    children=['0']
+                )
+            ],
+            style={'width': '48%', 'float': 'right', 'display': 'inline-block'}
+        )
+    ],
+    style={'width': '95%', 'margin-left': '2.5%', 'margin-right': '2.5%'}
+)
+
 
 ########################################################################################################################
-# Main
+# Read files and provide timeseries
 ########################################################################################################################
-
-
 @app.callback([Output('cc_upload_title', 'children'),
                Output('gr_timeseries', 'figure'),
                Output('cc_slider', 'min'),
                Output('cc_slider', 'max'),
-               Output('cc_slider', 'value')],
+               Output('dl_fig_timeseries', 'href')],
               [Input('cc_upload', 'contents'),
                Input('cc_upload', 'filename')])
 def main(content, filename):
-    # 1. Read file
     file_name, is_correct, min_slider, max_slider = read_imported_file(content, filename)
     if is_correct == 'Yes':
         fig_timeseries = send_data_timeseries()
     else:
         fig_timeseries = go.Figure(data=[go.Scatter()], layout=inp.layout_timeseries)
-    return file_name, fig_timeseries, min_slider, max_slider, min_slider
 
-
-@app.callback([Output('gr_radar', 'figure'),
-               Output('gr_table', 'data'),
-               Output('slider_value', 'children'),
-               Output('relay', 'layout')],
-              [Input('cc_slider', 'value')])
-def update_slider(slider_value):
-    if len(inp.df) > 0:
-        fig_radar = send_data_radar(slider_value)
-        data_table = send_data_table(slider_value)
-        radar_date = str(inp.df.index[slider_value])
-        new_layout = relayout_timeseries(slider_value)
-    else:
-        fig_radar = go.Figure(data=[go.Scatterpolar()], layout=inp.layout_radar)
-        data_table = []
-        radar_date = '0'
-        new_layout = inp.layout_timeseries
-    return fig_radar, data_table, radar_date, new_layout
-
-
-########################################################################################################################
-# Functions
-########################################################################################################################
+    return file_name, fig_timeseries, min_slider, max_slider, template_download_plotly(fig_timeseries, 0)
 
 
 def read_imported_file(content, filename):
@@ -204,7 +252,7 @@ def read_imported_file(content, filename):
             inp.df = pd.read_excel(io.BytesIO(decoded))
         file_name = '**Imported file:** {}'.format(filename)
         work_on_data()
-        min_slider, max_slider = 0, len(inp.df) - 1
+        min_slider, max_slider = 0, len(inp.df.index) - 1
         inp.slider_min, inp.slider_max = min_slider, max_slider
         is_correct = 'Yes'
     else:
@@ -216,17 +264,39 @@ def read_imported_file(content, filename):
 
 def work_on_data():
     inp.df.rename(str.lower, axis='columns', inplace=True)
+    for column in inp.df.columns:
+        if '.' in column:
+            inp.df = inp.df.rename(columns={column: column.split('.')[1]})
+
+    if 'time' in inp.df.columns:
+        if 'Units' in inp.df['time'][0]:
+            # File coming from the OSM, we remove the two first lines (Units and Description)
+            inp.df = inp.df.drop(inp.df.index[0])
+            inp.df = inp.df.drop(inp.df.index[0])
+
     if 'ts' in inp.df.columns:
-        time_col = 'ts'
+        inp.df['new_time'] = pd.to_datetime(inp.df['ts'], format='%d/%m/%Y %H:%M:%S')
     else:
-        time_col = 'time'
-    inp.df['new_time'] = pd.to_datetime(inp.df[time_col])
+        if 'date' in inp.df.columns:
+            inp.df['new_time'] = pd.to_datetime(inp.df['date'] + ' ' + inp.df['time'])
+        else:
+            inp.df['new_time'] = pd.to_datetime(inp.df['time'])
     inp.df.set_index('new_time', inplace=True)
-    if "dwatt" not in inp.df.columns:
-        inp.df.loc[inp.df.index, 'dwatt'] = 0
+
+    if "dwatt" in inp.df.columns:
+        inp.df['dwatt'] = pd.to_numeric(inp.df['dwatt'])
+    else:
+        inp.df.loc[:, 'dwatt'] = 0
+
+    if 'tnh' in inp.df.columns:
+        inp.df['tnh'] = pd.to_numeric(inp.df['tnh'])
+    else:
+        inp.df.loc[:, 'tnh'] = 0
+
     ttxd_count = 0
     for idx_ttxd in inp.df.columns:
         if 'ttxd_' in idx_ttxd:
+            inp.df[idx_ttxd] = pd.to_numeric(inp.df[idx_ttxd])
             ttxd_count += 1
 
     inp.tab_ttxd = []
@@ -244,7 +314,6 @@ def send_data_timeseries():
                 y=inp.df[idx],
                 name=idx,
                 yaxis="y",
-                hoverinfo='none',
             )
         )
 
@@ -265,7 +334,31 @@ def send_data_timeseries():
     return fig_timeseries
 
 
-def send_data_radar(radar_idx):
+########################################################################################################################
+# Provide radar and green shape on slider change
+########################################################################################################################
+@app.callback([Output('gr_radar', 'figure'),
+               Output('gr_table', 'data'),
+               Output('slider_value', 'children'),
+               Output('relay', 'layout'),
+               Output('dl_fig_radar', 'href')],
+              [Input('cc_slider', 'value'),
+               Input('radar_range', 'value')])
+def update_slider(slider_value, radar_extr):
+    if len(inp.df) > 0:
+        fig_radar = send_data_radar(slider_value, radar_extr)
+        data_table = send_data_table(slider_value)
+        radar_date = str(inp.df.index[slider_value])
+        new_layout = relayout_timeseries(slider_value)
+    else:
+        fig_radar = go.Figure(data=[go.Scatterpolar()], layout=inp.layout_radar)
+        data_table = []
+        radar_date = '0'
+        new_layout = inp.layout_timeseries
+    return fig_radar, data_table, radar_date, new_layout, template_download_plotly(fig_radar, slider_value)
+
+
+def send_data_radar(radar_idx, radar_extr):
 
     tab_ttxd_polar = inp.tab_ttxd
     tab_ttxd_polar.append(inp.tab_ttxd[0])
@@ -281,10 +374,8 @@ def send_data_radar(radar_idx):
 
     inp.data_radar = plot_rad
 
-    if inp.ttxd_min == 0:
-        inp.ttxd_min = min(inp.df[min(inp.df.loc[:, inp.tab_ttxd])]) - 60
-        inp.ttxd_max = max(inp.df[max(inp.df.loc[:, inp.tab_ttxd])]) + 10
-        inp.layout_radar['polar'].radialaxis = dict(range=(inp.ttxd_min, inp.ttxd_max))
+    inp.layout_radar['polar'].radialaxis = dict(range=(radar_extr[0], radar_extr[1]))
+    inp.layout_radar['title']['text'] = ''
 
     fig_radar = go.Figure(data=inp.data_radar, layout=inp.layout_radar)
 
@@ -292,12 +383,16 @@ def send_data_radar(radar_idx):
 
 
 def send_data_table(radar_idx):
-    spread = max(inp.df.loc[inp.df.index[radar_idx], inp.tab_ttxd]) - \
-             min(inp.df.loc[inp.df.index[radar_idx], inp.tab_ttxd])
+    tab_calc = []
+    for idx_ttxd in inp.tab_ttxd:
+        if inp.df[idx_ttxd].mean() > 0:
+            tab_calc.append(idx_ttxd)
+
+    spread = max(inp.df.loc[inp.df.index[radar_idx], tab_calc]) - min(inp.df.loc[inp.df.index[radar_idx], tab_calc])
     df_t = pd.DataFrame(index=[0], columns=['TNH', 'DWATT', 'TTXM', 'TTSXP'])
     df_t.loc[0, 'TNH'] = round(inp.df.loc[inp.df.index[radar_idx], 'tnh'], 3)
     df_t.loc[0, 'DWATT'] = round(inp.df.loc[inp.df.index[radar_idx], 'dwatt'], 3)
-    df_t.loc[0, 'TTXM'] = round(np.mean(inp.df.loc[inp.df.index[radar_idx], inp.tab_ttxd]), 1)
+    df_t.loc[0, 'TTXM'] = round(np.mean(inp.df.loc[inp.df.index[radar_idx], tab_calc]), 1)
     df_t.loc[0, 'TTSXP'] = round(spread, 3)
 
     data_table = df_t.to_dict('records')
@@ -311,13 +406,31 @@ def relayout_timeseries(radar_idx):
         opacity=0.4, fillcolor='green'
     )]
     new_layout = inp.layout_timeseries
+
     return new_layout
+
+
+########################################################################################################################
+# Timeseries click
+########################################################################################################################
+@app.callback(Output('cc_slider', 'value'),
+              [Input('gr_timeseries', 'clickData')])
+def timeseries_click(sel_pt):
+
+    if sel_pt is not None:
+        sel_date = pd.to_datetime(sel_pt['points'][0]['x'], format='%Y-%m-%d %H:%M:%S')
+        for idx in range(0, len(inp.df.index) + 1):
+            if inp.df.index[idx] == sel_date:
+                sl_value = idx
+                break
+    else:
+        sl_value = 0
+
+    return sl_value
 
 
 ########################################################################################################################
 # Show app
 ########################################################################################################################
-
-
 if __name__ == '__main__':
     app.run_server(debug=True)
